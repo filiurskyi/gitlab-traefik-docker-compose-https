@@ -1,0 +1,2 @@
+CREATE USER miniflux WITH ENCRYPTED PASSWORD 'fk4iLKJherhDUeurh4bDew';
+CREATE DATABASE miniflux OWNER miniflux;

@@ -1,0 +1,458 @@
+services:
+  # gitlab:
+  #   image: ${GITLAB_IMAGE_TAG}
+  #   container_name: gitlab
+  #   # If you need to ensure GitLab listens on port 8081 internally, you could do:
+  #   # expose:
+  #   #   - "8081"
+  #   # or you can leave it out; what's important is your Omnibus config and the Traefik label for the internal port match.
+
+  #   environment:
+  #     GITLAB_OMNIBUS_CONFIG: |
+  #       external_url 'http://${GITLAB_HOSTNAME}'
+
+  #       # -- Example: Tweak the internal nginx port
+  #       # If the Omnibus internal Nginx is truly listening on 8081,
+  #       # you might do:
+  #       #   nginx['listen_port'] = 8081
+  #       #   nginx['listen_https'] = false
+  #       #
+  #       # ... plus the rest of your existing config ...
+  #       nginx['listen_port'] = 8081
+  #       nginx['listen_https'] = false
+
+  #       # Important for reverse proxy headers (Traefik → GitLab)
+  #       nginx['proxy_set_headers'] = {
+  #         'Host' => '${GITLAB_HOSTNAME}',
+  #         'X-Forwarded-Host' => '${GITLAB_HOSTNAME}',
+  #         'X-Forwarded-Port' => '80',
+  #         'X-Forwarded-Proto' => 'http'
+  #       }
+
+  #       # If GitLab shell SSH is on port 22 (inside container),
+  #       # you can pass that along to Traefik (see labels below).
+  #       gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SHELL_SSH_PORT}
+
+  #       # (Include your DB, SMTP, etc. settings)
+
+  #   volumes:
+  #     - gitlab-data:/var/opt/gitlab
+  #     - gitlab-logs:/var/log/gitlab
+  #     - gitlab-config:/etc/gitlab
+
+  #   shm_size: "256m"
+
+  #   networks:
+  #     - gitlab-network
+  #     - traefik-network
+
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8081/"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 240s
+
+  #   # ------------------------------
+  #   # TRAEFIK LABELS
+  #   # ------------------------------
+  #   labels:
+  #     - "traefik.enable=true"
+
+  #     # HTTP router: route by Hostname. Goes to internal port 8081
+  #     - "traefik.http.routers.gitlab.rule=Host(`${GITLAB_HOSTNAME}`)"
+  #     - "traefik.http.routers.gitlab.entrypoints=web"
+
+  #     # Tell Traefik that the internal port to send traffic to is 8081
+  #     - "traefik.http.services.gitlab.loadbalancer.server.port=8081"
+
+  #     # Example: add compression middleware
+  #     - "traefik.http.routers.gitlab.middlewares=compresstraefik"
+  #     - "traefik.http.middlewares.compresstraefik.compress=true"
+
+  #     # SSH over TCP:
+  #     # You MUST define a Traefik entrypoint (e.g. `--entrypoints.ssh.address=:2222`)
+  #     # and expose port 2222 on the Traefik container if you want external SSH access.
+  #     - "traefik.tcp.routers.gitlab-ssh.rule=HostSNI(`*`)"
+  #     - "traefik.tcp.routers.gitlab-ssh.service=gitlab-ssh"
+  #     - "traefik.tcp.routers.gitlab-ssh.entrypoints=ssh"
+  #     - "traefik.tcp.services.gitlab-ssh.loadbalancer.server.port=22"
+
+  #     # Tell Traefik which Docker network to use for this container
+  #     - "traefik.docker.network=traefik-network"
+
+  #   restart: unless-stopped
+
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     traefik:
+  #       condition: service_healthy
+
+
+  # postgres:
+  #   image: ${GITLAB_POSTGRES_IMAGE_TAG}
+  #   volumes:
+  #     - gitlab-postgres:/var/lib/postgresql/data
+  #   environment:
+  #     POSTGRES_DB: ${GITLAB_DB_NAME}
+  #     POSTGRES_USER: ${GITLAB_DB_USER}
+  #     POSTGRES_PASSWORD: ${GITLAB_DB_PASSWORD}
+  #   networks:
+  #     - gitlab-network
+  #   healthcheck:
+  #     test: [ "CMD", "pg_isready", "-q", "-d", "${GITLAB_DB_NAME}", "-U", "${GITLAB_DB_USER}" ]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 60s
+  #   restart: unless-stopped
+
+
+# pihole
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    environment:
+      TZ: "Europe/London"
+      FTLCONF_webserver_api_password: ${PIHOLE_PASS}
+      FTLCONF_dns_listeningMode: "all"
+    volumes:
+      - ./etc-pihole:/etc/pihole
+    cap_add:
+      - NET_ADMIN
+      - SYS_TIME
+      - SYS_NICE
+    restart: unless-stopped
+    networks:
+      - traefik-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pihole.rule=Host(`${PIHOLE_HOSTNAME}`)"
+      - "traefik.http.routers.pihole.entrypoints=web"
+      - "traefik.http.services.pihole.loadbalancer.server.port=80"
+    depends_on:
+      - traefik
+
+# traefik
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    # depends_on:
+    #   - ngrok
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2222:2222"
+    networks:
+      - traefik-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    command:
+      - "--log.level=INFO"
+      # temporarily
+      # - "--log.level=DEBUG"
+      # - "--accesslog=true"
+      - "--api.dashboard=true"
+      - "--ping=true"
+      - "--ping.entrypoint=ping"
+      - "--entrypoints.ping.address=:8083"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.dashboard.address=:8082"
+      - "--entrypoints.ssh.address=:2222"
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+      - "--global.checknewversion=true"
+      - "--global.sendanonymoususage=false"
+    healthcheck:
+      test: ["CMD", "wget", "http://localhost:8083/ping", "--spider"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_HOSTNAME}`)"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=authtraefik"
+      - "traefik.http.middlewares.authtraefik.basicauth.users=${TRAEFIK_BASIC_AUTH}"
+
+# paperless
+  paperless-broker:
+    image: docker.io/library/redis:7
+    restart: unless-stopped
+    volumes:
+      - paperless-redisdata:/data
+    networks:
+      - paperless-network
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - ./paperless-data:/usr/src/paperless/data
+      - ./paperless-media:/usr/src/paperless/media
+      - ./paperless-export:/usr/src/paperless/export
+      - /home/bubliq/Code/gitlab-traefik-docker-compose-https/paperless-consume:/usr/src/paperless/consume
+    env_file: paper-docker-compose.env
+    environment:
+      PAPERLESS_REDIS: redis://paperless-broker:6379
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.paperless.rule=Host(`${PAPERLESS_HOSTNAME}`)"
+      - "traefik.http.routers.paperless.entrypoints=web"
+      - "traefik.http.services.paperless.loadbalancer.server.port=8000"
+      - "traefik.docker.network=traefik-network"
+    networks:
+      - traefik-network
+      - paperless-network
+    depends_on:
+      - traefik
+      - paperless-broker
+
+# chatwoot
+  # base-chwoot: &base-chwoot
+  #   image: chatwoot/chatwoot:latest
+  #   env_file: .env.chatwoot ## Change this file for customized env variables
+  #   volumes:
+  #     - storage_data:/app/storage
+
+  # chatwoot:
+  #   <<: *base-chwoot
+
+  #   expose:
+  #     - "3000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - RAILS_ENV=production
+  #     - INSTALLATION_ENV=docker
+  #   entrypoint: docker/entrypoints/rails.sh
+  #   command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
+  #   restart: always
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.chatwoot.rule=Host(`${CHATWOOT_HOSTNAME}`) || Host(`${NGROK_HOSTNAME}`)"
+  #     - "traefik.http.routers.chatwoot.entrypoints=web"
+  #     - "traefik.http.services.chatwoot.loadbalancer.server.port=3000"
+  #     - "traefik.docker.network=traefik-network"
+  #   networks:
+  #     - chatwoot-network
+  #     - traefik-network
+  #   depends_on:
+  #     - traefik
+  #     - postgres
+  #     - redis
+
+
+  # sidekiq:
+  #   <<: *base-chwoot
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #   environment:
+  #     - NODE_ENV=production
+  #     - RAILS_ENV=production
+  #     - INSTALLATION_ENV=docker
+  #   command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
+  #   restart: always
+  #   networks:
+  #     - chatwoot-network
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: always
+    ports:
+      - '127.0.0.1:5432:5432'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    networks:
+      # - chatwoot-network
+      - odoo-network
+      - miniflux-network
+
+  # redis:
+  #   image: redis:alpine
+  #   restart: always
+  #   command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\""]
+  #   env_file: .env
+  #   volumes:
+  #     - redis_data:/data
+  #   ports:
+  #     - '127.0.0.1:6379:6379'
+  #   networks:
+  #     - chatwoot-network
+
+  # ngrok:
+  #   image: ngrok/ngrok:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+  #   command: >
+  #     http --domain=${NGROK_HOSTNAME}
+  #     --log=stdout --log-level=debug
+  #     http://traefik:80
+  #   networks:
+  #     - traefik-network
+  #   # ports:
+  #   #   - "4040:4040"   # ngrok local web UI (only on your host)
+
+
+# odoo ERP
+  odoo:
+    image: odoo:18
+    depends_on:
+      - postgres
+      - traefik
+    volumes:
+      - odoo-web:/var/lib/odoo
+      - ./odoo-config:/etc/odoo  # Optional: custom config directory
+      # - ./addons:/mnt/extra-addons  # Optional: custom addons directory
+    environment:
+      HOST: ${POSTGRES_HOST}
+      PORT: 5432
+      USER: ${POSTGRES_USER}
+      PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE: ${POSTGRES_DB}
+      MASTER_PASSWORD: "wer2!#ruheDeieNbeE43!"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.odoo.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.odoo.entrypoints=web
+      - traefik.docker.network=traefik-network
+      - "traefik.http.services.odoo.loadbalancer.server.port=8069"
+    networks:
+      - traefik-network
+      - odoo-network
+    restart:
+      always
+
+# n8n automations
+  # n8n:
+  #   image: docker.n8n.io/n8nio/n8n
+  #   env_file: .env.n8n
+  #   restart: always
+  #   # ports:
+  #   #   - "127.0.0.1:5678:5678"
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.http.routers.n8n.rule=Host(`n8n.lan`)
+  #     - traefik.http.routers.n8n.entrypoints=web
+  #     - traefik.docker.network=traefik-network
+  #     - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+  #   environment:
+  #     - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+  #     - N8N_HOST=0.0.0.0
+  #     - N8N_PORT=5678
+  #     # - N8N_PROTOCOL=http
+  #     - N8N_RUNNERS_ENABLED=true
+  #     - NODE_ENV=production
+  #     - N8N_SECURE_COOKIE=false
+  #     # - WEBHOOK_URL=http://n8n.lan/
+  #     - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+  #     - TZ=${GENERIC_TIMEZONE}
+  #   volumes:
+  #     - n8n_data:/home/node/.n8n
+  #     - ./n8n-files:/files
+  #   networks:
+  #     - traefik-network
+
+
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    hostname: syncthing
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${GENERIC_TIMEZONE}
+    volumes:
+      - ./syncthing-config:/config
+      - ./syncthing-data:/data
+    ports:
+      - 8384:8384
+      - 22000:22000/tcp
+      - 22000:22000/udp
+      - 21027:21027/udp
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.syncthing.rule=Host(`${DOMAIN_SYNCTHING}`)
+      - traefik.http.routers.syncthing.entrypoints=web
+      - traefik.docker.network=traefik-network
+      - "traefik.http.services.syncthing.loadbalancer.server.port=8384"
+    networks:
+      - traefik-network
+
+# miniflux RSS reader
+  miniflux:
+    image: miniflux/miniflux:latest
+    container_name: miniflux
+    hostname: ${DOMAIN_MINIFLUX}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://miniflux:${MINIFLUX_DB_PASSWORD}@postgres/miniflux?sslmode=disable
+      - RUN_MIGRATIONS=1
+      - CREATE_ADMIN=1
+      - ADMIN_USERNAME=${MINIFLUX_ADMIN_USER}
+      - ADMIN_PASSWORD=${MINIFLUX_ADMIN_PASSWORD}
+      - BASE_URL=http://${DOMAIN_MINIFLUX}
+      - TZ=${GENERIC_TIMEZONE}
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.miniflux.rule=Host(`${DOMAIN_MINIFLUX}`)
+      - traefik.http.routers.miniflux.entrypoints=web
+      - traefik.docker.network=traefik-network
+      - traefik.http.services.miniflux.loadbalancer.server.port=8080
+    networks:
+      - traefik-network
+      - miniflux-network
+
+networks:
+  # gitlab-network:
+  traefik-network:
+    external: true
+  paperless-network:
+  # chatwoot-network:
+  odoo-network:
+  miniflux-network:
+
+
+
+volumes:
+  n8n_data:
+  paperless-redisdata:
+  # gitlab-data:
+  # gitlab-logs:
+  # gitlab-config:
+  # gitlab-runner-config:
+  # gitlab-postgres:
+  # traefik-certificates:
+  storage_data:
+  postgres_data:
+  redis_data:
+  odoo-web:
+
+
+
+
+
+
+
+
