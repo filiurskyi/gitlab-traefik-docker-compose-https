@@ -403,8 +403,7 @@ services:
     container_name: miniflux
     hostname: ${DOMAIN_MINIFLUX}
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     environment:
       - DATABASE_URL=postgres://miniflux:${MINIFLUX_DB_PASSWORD}@postgres/miniflux?sslmode=disable
       - RUN_MIGRATIONS=1
