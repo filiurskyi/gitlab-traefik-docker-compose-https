@@ -187,6 +187,7 @@ services:
 
 # paperless
   paperless-broker:
+    container_name: paperless-redis
     image: docker.io/library/redis:7
     restart: unless-stopped
     volumes:
@@ -195,6 +196,7 @@ services:
       - paperless-network
 
   paperless:
+    container_name: paperless
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
     restart: unless-stopped
     expose:
@@ -269,6 +271,7 @@ services:
   #     - chatwoot-network
 
   postgres:
+    container_name: pgvector16
     image: pgvector/pgvector:pg16
     restart: always
     ports:
@@ -296,23 +299,9 @@ services:
   #   networks:
   #     - chatwoot-network
 
-  # ngrok:
-  #   image: ngrok/ngrok:latest
-  #   restart: unless-stopped
-  #   environment:
-  #     NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-  #   command: >
-  #     http --domain=${NGROK_HOSTNAME}
-  #     --log=stdout --log-level=debug
-  #     http://traefik:80
-  #   networks:
-  #     - traefik-network
-  #   # ports:
-  #   #   - "4040:4040"   # ngrok local web UI (only on your host)
-
-
 # odoo ERP
   odoo:
+    container_name: odoo
     image: odoo:18
     depends_on:
       - postgres
@@ -341,34 +330,51 @@ services:
       always
 
 # n8n automations
-  # n8n:
-  #   image: docker.n8n.io/n8nio/n8n
-  #   env_file: .env.n8n
-  #   restart: always
-  #   # ports:
-  #   #   - "127.0.0.1:5678:5678"
-  #   labels:
-  #     - traefik.enable=true
-  #     - traefik.http.routers.n8n.rule=Host(`n8n.lan`)
-  #     - traefik.http.routers.n8n.entrypoints=web
-  #     - traefik.docker.network=traefik-network
-  #     - "traefik.http.services.n8n.loadbalancer.server.port=5678"
-  #   environment:
-  #     - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
-  #     - N8N_HOST=0.0.0.0
-  #     - N8N_PORT=5678
-  #     # - N8N_PROTOCOL=http
-  #     - N8N_RUNNERS_ENABLED=true
-  #     - NODE_ENV=production
-  #     - N8N_SECURE_COOKIE=false
-  #     # - WEBHOOK_URL=http://n8n.lan/
-  #     - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
-  #     - TZ=${GENERIC_TIMEZONE}
-  #   volumes:
-  #     - n8n_data:/home/node/.n8n
-  #     - ./n8n-files:/files
-  #   networks:
-  #     - traefik-network
+  n8n:
+    container_name: n8n
+    image: docker.n8n.io/n8nio/n8n
+    env_file: .env.n8n
+    restart: always
+    # ports:
+    #   - "127.0.0.1:5678:5678"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.n8n.rule=Host(`n8n.lan`)
+      - traefik.http.routers.n8n.entrypoints=web
+      - traefik.docker.network=traefik-network
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+    environment:
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      # - N8N_PROTOCOL=http
+      - N8N_RUNNERS_ENABLED=true
+      - NODE_ENV=production
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=https://${NGROK_HOSTNAME}/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - TZ=${GENERIC_TIMEZONE}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-files:/files
+    networks:
+      - traefik-network
+
+  ngrok:
+    container_name: ngrok
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: >
+      http --domain=${NGROK_HOSTNAME}
+      --log=stdout --log-level=debug
+      http://n8n:5678
+    networks:
+      - traefik-network
+    # ports:
+    #   - "4040:4040"   # ngrok local web UI (only on your host)
+
 
 
   syncthing:
