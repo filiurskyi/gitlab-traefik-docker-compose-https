@@ -172,7 +172,7 @@ services:
       - "--global.checknewversion=true"
       - "--global.sendanonymoususage=false"
     healthcheck:
-      test: ["CMD", "wget", "http://localhost:8083/ping", "--spider"]
+      test: ["CMD", "sh", "-c", "wget --spider -q http://$(hostname):8083"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -410,6 +410,7 @@ services:
     hostname: ${DOMAIN_MINIFLUX}
     depends_on:
       - postgres
+      - traefik
     environment:
       - DATABASE_URL=postgres://miniflux:${MINIFLUX_DB_PASSWORD}@postgres/miniflux?sslmode=disable
       - RUN_MIGRATIONS=1
@@ -434,6 +435,8 @@ services:
   mealie:
     image: ghcr.io/mealie-recipes/mealie:latest # 
     container_name: mealie
+    depends_on:
+      - traefik
     restart: always
     deploy:
       resources:
@@ -459,6 +462,8 @@ services:
   jobsync:
     image: ghcr.io/gsync/jobsync:latest
     container_name: jobsync
+    depends_on:
+      - traefik
     # ports:
     #   - "3737:3000"
     environment:
@@ -468,7 +473,7 @@ services:
       - ENCRYPTION_KEY=${JOBSYNC_ENCRYPTION_KEY:-sdgeOIJhjtruhu345huisfdahiu893q48y9hdfiuksgldukhsdhiof}
       - NEXTAUTH_URL=${JOBSYNC_NEXTAUTH_URL:-http://${DOMAIN_JOBSYNC}}
       - AUTH_TRUST_HOST=${JOBSYNC_AUTH_TRUST_HOST:-true}
-      - TZ=${GENERIC_TIMEZONE:-America/Edmonton}
+      - TZ=${GENERIC_TIMEZONE:-Europe/Berlin}
       - OLLAMA_BASE_URL=${JOBSYNC_OLLAMA_BASE_URL:-}
       - OPENAI_API_KEY=${JOBSYNC_OPENAI_API_KEY:-}
       - DEEPSEEK_API_KEY=${JOBSYNC_DEEPSEEK_API_KEY:-}
@@ -477,7 +482,7 @@ services:
       - ./jobsync-data/data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://${DOMAIN_JOBSYNC}"]
+      test: ["CMD", "sh", "-c", "wget --spider -q http://$(hostname):3000"]
       interval: 30s
       timeout: 10s
       retries: 3
