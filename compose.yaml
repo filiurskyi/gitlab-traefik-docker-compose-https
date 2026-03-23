@@ -459,9 +459,42 @@ services:
       - traefik-network
 
 
-  jobsync:
-    image: ghcr.io/gsync/jobsync:latest
-    container_name: jobsync
+  # jobsync:
+  #   image: ghcr.io/gsync/jobsync:latest
+  #   container_name: jobsync
+  #   depends_on:
+  #     - traefik
+  #   # ports:
+  #   #   - "3737:3000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - DATABASE_URL=file:/data/dev.db
+  #     - AUTH_SECRET=${JOBSYNC_AUTH_SECRET:-}
+  #     - ENCRYPTION_KEY=${JOBSYNC_ENCRYPTION_KEY:-sdgeOIJhjtruhu345huisfdahiu893q48y9hdfiuksgldukhsdhiof}
+  #     - NEXTAUTH_URL=${JOBSYNC_NEXTAUTH_URL:-http://${DOMAIN_JOBSYNC}}
+  #     - AUTH_TRUST_HOST=${JOBSYNC_AUTH_TRUST_HOST:-true}
+  #     - TZ=${GENERIC_TIMEZONE:-Europe/Berlin}
+  #     - OLLAMA_BASE_URL=${JOBSYNC_OLLAMA_BASE_URL:-}
+  #     - OPENAI_API_KEY=${JOBSYNC_OPENAI_API_KEY:-}
+  #     - DEEPSEEK_API_KEY=${JOBSYNC_DEEPSEEK_API_KEY:-}
+  #     - RAPIDAPI_KEY=${JOBSYNC_RAPIDAPI_KEY:-}
+  #   volumes:
+  #     - ./jobsync-data/data:/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "sh", "-c", "wget --spider -q http://$(hostname):3000"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.http.routers.jobsync.rule=Host(`${DOMAIN_JOBSYNC}`)
+  #     - traefik.http.routers.jobsync.entrypoints=web
+  #     - traefik.docker.network=traefik-network
+  #     - traefik.http.services.jobsync.loadbalancer.server.port=3000
+  #   networks:
+  #     - traefik-network
     depends_on:
       - traefik
     # ports:
