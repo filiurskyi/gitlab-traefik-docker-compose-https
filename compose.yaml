@@ -172,7 +172,7 @@ services:
       - "--global.checknewversion=true"
       - "--global.sendanonymoususage=false"
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget --spider -q http://$(hostname):8083"]
+      test: ["CMD", "sh", "-c", "wget --spider -q http://127.0.0.1:8083/ping"]
       interval: 10s
       timeout: 5s
       retries: 3
